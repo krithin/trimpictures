@@ -6,6 +6,7 @@ import numpy as np
 
 parser = argparse.ArgumentParser(description="Trim and deskew an image.")
 parser.add_argument("--quiet", action="store_true", default=False, help="Don't prompt for a keypress before saving.")
+parser.add_argument("--process-scale", type=int, default=1, help="Scale intermediate processing images down by this integer factor for speed.")
 parser.add_argument("input_filename")
 parser.add_argument("output_filename")
 args = parser.parse_args()
@@ -14,7 +15,11 @@ img = cv.imread(args.input_filename)
 if img is None:
     sys.exit("Could not read the image.")
 
-resized = cv.resize(img, (int(img.shape[1] / 4), int(img.shape[0] / 4)), interpolation = cv.INTER_AREA)
+scale = args.process_scale
+if scale != 1:
+    resized = cv.resize(img, (int(img.shape[1] / scale), int(img.shape[0] / scale)), interpolation = cv.INTER_AREA)
+else:
+    resized = img
 if not args.quiet:
     cv.imshow("Display window", resized)
     k = cv.waitKey(0)
@@ -34,8 +39,12 @@ if not args.quiet:
     cv.imshow("Contours", drawing)
     k = cv.waitKey(0)
 
+# Reject contours of length < 200 because they're probably bits of dirt
+real_contours = [c for c in contours if cv.arcLength(c, False) > 200.0 / scale]
 # Draw convex hull
-hull = cv.convexHull(np.array([point for contour in contours if cv.arcLength(contour, False) > 40 for point in contour]))
+hull = cv.convexHull(
+    np.array([point for contour in real_contours for point in contour])
+)
 color = (random.randint(0,256), random.randint(0,256), random.randint(0,256))
 cv.drawContours(drawing, [hull], -1, color)
 if not args.quiet:
@@ -54,19 +63,19 @@ if not args.quiet:
 width = int(rect[1][0])
 height = int(rect[1][1])
 
-src_pts = box.astype("float32") * 4
+src_pts = box.astype("float32") * scale
 # coordinate of the points in box points after the rectangle has been
 # straightened
-dst_pts = np.array([[0, height * 4 -1],
+dst_pts = np.array([[0, height * scale -1],
                     [0, 0],
-                    [width * 4 -1, 0],
-                    [width * 4 -1, height * 4 -1]], dtype="float32")
+                    [width * scale -1, 0],
+                    [width * scale -1, height * scale -1]], dtype="float32")
 
 # the perspective transformation matrix
 M = cv.getPerspectiveTransform(src_pts, dst_pts)
 
 # directly warp the original image to get the straightened rectangle
-warped = cv.warpPerspective(img, M, (width * 4, height * 4))
+warped = cv.warpPerspective(img, M, (width * scale, height * scale))
 
 cv.imwrite(args.output_filename, warped)
 #cv.imshow("Warped", warped)
