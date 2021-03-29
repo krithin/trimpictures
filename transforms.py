@@ -1,4 +1,6 @@
 """Useful transforms for trimming scanned images."""
+from typing import List
+
 import cv2 as cv
 import numpy as np
 
@@ -37,3 +39,18 @@ def rotate_crop_to_rect(rect: any, scale: int = 1):
     ]).astype(np.float32)
 
     return cv.getAffineTransform(src_points, dst_points), (width, height)
+
+def partition_contours(contours, num_sets) -> List[np.array]:
+    """Splits contours into num_sets distinct sets of points to visually partition the image."""
+    all_points = np.array([point.astype(np.float32) for contour in contours for point in contour])
+    if num_sets == 1:
+        return [all_points.astype(np.int0).reshape((len(all_points), 2))]
+
+    # Apply opencv's k-means clustering to group the points, disregarding contour continuity.
+    criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 20, 0.5)
+    compactness, labels, centres = cv.kmeans(
+        all_points, num_sets, None, criteria, 10, cv.KMEANS_PP_CENTERS
+    )
+    print(f'Finished clustering, compactness {compactness}. Cluster centres at {centres}')
+
+    return [all_points[labels==i].astype(np.int0) for i in range(num_sets)]
